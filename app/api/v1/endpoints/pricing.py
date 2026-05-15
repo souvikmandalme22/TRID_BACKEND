@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.schemas.base import APIResponse
@@ -34,7 +34,7 @@ async def get_price_internal(model_id: str, material_slug: str, db: AsyncSession
 
 
 @router.post("/pricing/quick-calculate")
-async def quick_calculate(request: dict):
+async def quick_calculate(request: dict = Body(...)):
     from app.utils.pricing_engine import calculate_price as calc, ComplexityTier, MachineTier
     try:
         material_slug = request.get("material_key", "pla").lower().replace("_", "-")
