@@ -12,7 +12,9 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     DATABASE_URL_SYNC: str
 
-    ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]
+    ALLOWED_ORIGINS: list[str] = [
+    "https://trid-2q3h.onrender.com",
+]
 
     class Config:
         env_file = ".env"
