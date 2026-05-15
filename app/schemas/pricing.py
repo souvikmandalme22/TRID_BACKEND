@@ -1,7 +1,13 @@
 from pydantic import BaseModel, field_validator
 from datetime import datetime
 from typing import Optional
-from app.utils.pricing_engine import DeliveryTier
+from enum import Enum
+
+
+class DeliveryTier(str, Enum):
+    standard = "standard"
+    express  = "express"
+    free     = "free"
 
 
 class PricingRequest(BaseModel):
@@ -17,7 +23,6 @@ class PricingRequest(BaseModel):
         return v
 
 
-# Internal breakdown — full detail (admin/internal use)
 class PricingBreakdownResponse(BaseModel):
     model_id:                     str
     material_slug:                str
@@ -48,7 +53,6 @@ class PricingBreakdownResponse(BaseModel):
         })
 
 
-# Customer-visible — hides platform fee internals
 class PricingPublicResponse(BaseModel):
     model_id:          str
     material_slug:     str
