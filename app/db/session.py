@@ -63,7 +63,8 @@ async def get_db() -> AsyncSession:
 
 async def init_db():
     async with engine.begin() as conn:
-        logger.info("Database connection established.")
+        await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables created.")
 
 
 async def close_db():
