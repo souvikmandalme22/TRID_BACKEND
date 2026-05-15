@@ -4,6 +4,7 @@ from app.api.v1.endpoints import (
     support, support_density, segment,
     material_family, material, use_case,
     recommendation, infill, effective_material,
+    pricing, payments,
 )
 
 router = APIRouter()
@@ -20,3 +21,5 @@ router.include_router(use_case.router,           tags=["Use Cases"])
 router.include_router(recommendation.router,     tags=["Recommendations"])
 router.include_router(infill.router,             tags=["Infill"])
 router.include_router(effective_material.router, tags=["Effective Material"])
+router.include_router(pricing.router,            tags=["Pricing"])
+router.include_router(payments.router,           tags=["Payments"])
