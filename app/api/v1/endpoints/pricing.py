@@ -8,33 +8,35 @@ router = APIRouter()
 async def quick_calculate(request: dict = Body(...)):
     try:
         material_slug = request.get("material_key", "pla").lower().replace("_", "-")
+
         volume_cc = float(request.get("final_effective_material_cc", 10))
         quantity = int(request.get("quantity", 1))
         delivery = request.get("delivery_type", "standard")
 
-        # IMPORTANT: DO NOT IMPORT BROKEN ENUMS
-        # Use plain values instead (safe for production)
-        complexity = "mid_complex"
-        machine_tier = "desktop"
+        # optional (frontend later send karega)
+        infill_percent = int(request.get("infill_percent", 20))
 
         breakdown = calc(
-            final_effective_material=volume_cc * 1000,
+            model_volume_cc=volume_cc,
+            support_volume_cc=0,  # MVP: no support calculation yet
             material_slug=material_slug,
-            complexity=complexity,
-            machine_tier=machine_tier,
+            infill_percent=infill_percent,
             quantity=quantity,
-            delivery_type=delivery,
+            delivery_tier=delivery,
+            complexity_features={},      # MVP safe default
+            orientation_analysis={},     # MVP safe default
         )
 
         return {
-            "final_price": breakdown.total_price,
-            "base_display_price": breakdown.customer_material_cost + breakdown.base_cost,
-            "gst_amount": breakdown.customer_gst,
-            "delivery_charges": breakdown.customer_delivery,
+            "final_price": breakdown.final_price,
+            "base_display_price": breakdown.base_manufacturing_cost,
+            "gst_amount": breakdown.gst_amount,
+            "delivery_charges": breakdown.delivery_fee,
         }
 
     except Exception as e:
         print("PRICING ERROR:", str(e))
+
         return {
             "final_price": 1240,
             "base_display_price": 1050,
