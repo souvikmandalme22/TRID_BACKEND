@@ -128,7 +128,7 @@ def get_complexity_multiplier(complexity_features: Dict) -> float:
 
 
 # =========================================================
-# ORIENTATION ENGINE (INDUSTRY GRADE)
+# ORIENTATION ENGINE
 # =========================================================
 
 def _sigmoid(x: float) -> float:
@@ -136,13 +136,6 @@ def _sigmoid(x: float) -> float:
 
 
 def get_orientation_multiplier(orientation_analysis: Dict) -> float:
-    """
-    Stable production-grade orientation risk engine:
-    - weighted scoring
-    - nonlinear smoothing
-    - safe bounded output
-    """
-
     WEIGHTS = {
         "failure_risk": 5,
         "warp_risk": 3,
@@ -172,9 +165,7 @@ def get_orientation_multiplier(orientation_analysis: Dict) -> float:
     score += failure_risk * WEIGHTS["failure_risk"]
 
     normalized = score / 18.0
-
     curve = _sigmoid((normalized - 0.5) * 6)
-
     multiplier = 1.0 + (curve * 0.70)
 
     return round(max(1.0, min(multiplier, 1.70)), 3)
@@ -189,14 +180,22 @@ def get_material_rate(material_slug: str) -> float:
 
 
 # =========================================================
-# PLATFORM FEES
+# PLATFORM FEE ENGINE (psychological tiered)
 # =========================================================
 
 def get_platform_fee(adjusted_cost: float) -> float:
+    if adjusted_cost < 100:
+        return 15
     if adjusted_cost < 300:
+        return 25
+    if adjusted_cost < 600:
+        return 50
+    if adjusted_cost < 1500:
         return 100
-    if adjusted_cost < 1000:
-        return 250
+    if adjusted_cost < 3000:
+        return 200
+    if adjusted_cost < 6000:
+        return 350
     return 500
 
 
@@ -206,20 +205,20 @@ def get_platform_fee(adjusted_cost: float) -> float:
 
 def get_packaging_fee(effective_volume_cc: float, material_slug: str) -> float:
     if "resin" in material_slug:
-        return 50
-    if effective_volume_cc > 300:
-        return 40
-    if effective_volume_cc > 100:
         return 25
-    return 15
+    if effective_volume_cc > 300:
+        return 20
+    if effective_volume_cc > 100:
+        return 10
+    return 5
 
 
 # =========================================================
-# DELIVERY ENGINE
+# DELIVERY ENGINE (0 here — added at checkout)
 # =========================================================
 
 def get_delivery_fee(delivery_tier: str) -> float:
-    return DELIVERY_PRICING.get(delivery_tier, 80)
+    return 0
 
 
 # =========================================================
