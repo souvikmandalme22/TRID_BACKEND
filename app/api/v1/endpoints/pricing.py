@@ -56,10 +56,16 @@ async def quick_calculate(request: dict = Body(...)):
             "model_volume_cc": breakdown.model_volume_cc,
             "support_volume_cc": breakdown.support_volume_cc,
             "effective_volume_cc": breakdown.effective_volume_cc,
-            "final_price": breakdown.final_price,
             "base_display_price": breakdown.base_manufacturing_cost,
+            "base_manufacturing_cost": breakdown.base_manufacturing_cost,
+            "adjusted_manufacturing_cost": breakdown.adjusted_manufacturing_cost,
+            "platform_fee": breakdown.platform_fee,
+            "packaging_fee": breakdown.packaging_fee,
+            "subtotal": breakdown.subtotal,
             "gst_amount": breakdown.gst_amount,
             "delivery_charges": breakdown.delivery_fee,
+            "delivery_fee": breakdown.delivery_fee,
+            "final_price": breakdown.final_price,
         }
 
     except HTTPException:
