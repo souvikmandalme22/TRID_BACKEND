@@ -84,8 +84,8 @@ class PriceBreakdown:
 # =========================================================
 
 def get_infill_factor(infill_percent: int) -> float:
-    nearest = min(INFILL_FACTORS.keys(), key=lambda x: abs(x - infill_percent))
-    return INFILL_FACTORS[nearest]
+    safe_percent = max(0, min(infill_percent, 100))
+    return round(0.28 + (0.72 * (safe_percent / 100)), 4)
 
 
 # =========================================================
@@ -93,13 +93,7 @@ def get_infill_factor(infill_percent: int) -> float:
 # =========================================================
 
 def get_support_factor(material_slug: str, support_volume_cc: float) -> float:
-    if "resin" in material_slug:
-        return 0.2
-    if support_volume_cc > 100:
-        return 0.55
-    if support_volume_cc > 40:
-        return 0.45
-    return 0.3
+    return 1.0
 
 
 # =========================================================
