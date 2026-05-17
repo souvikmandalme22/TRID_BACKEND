@@ -1,45 +1,72 @@
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, HTTPException, status
 from app.utils.pricing_engine import calculate_price as calc
 
 router = APIRouter()
 
 
+def _as_float(value, field_name: str) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"{field_name} must be a number",
+        )
+
+
+def _as_int(value, field_name: str) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"{field_name} must be an integer",
+        )
+
+
 @router.post("/pricing/quick-calculate")
 async def quick_calculate(request: dict = Body(...)):
     try:
-        material_slug = request.get("material_key", "pla").lower().replace("_", "-")
+        material_slug = (
+            request.get("material_slug") or request.get("material_key") or "pla"
+        ).lower().replace("_", "-")
 
-        volume_cc = float(request.get("final_effective_material_cc", 10))
-        quantity = int(request.get("quantity", 1))
-        delivery = request.get("delivery_type", "standard")
-
-        # optional (frontend later send karega)
-        infill_percent = int(request.get("infill_percent", 20))
+        model_volume_cc = _as_float(
+            request.get("model_volume_cc", request.get("final_effective_material_cc")),
+            "model_volume_cc",
+        )
+        support_volume_cc = _as_float(request.get("support_volume_cc", 0), "support_volume_cc")
+        quantity = _as_int(request.get("quantity", 1), "quantity")
+        delivery = request.get("delivery_tier") or request.get("delivery_type") or "standard"
+        infill_percent = _as_int(request.get("infill_percent", 20), "infill_percent")
 
         breakdown = calc(
-            model_volume_cc=volume_cc,
-            support_volume_cc=0,  # MVP: no support calculation yet
+            model_volume_cc=model_volume_cc,
+            support_volume_cc=support_volume_cc,
             material_slug=material_slug,
             infill_percent=infill_percent,
             quantity=quantity,
             delivery_tier=delivery,
-            complexity_features={},      # MVP safe default
-            orientation_analysis={},     # MVP safe default
+            complexity_features=request.get("complexity_features") or {},
+            orientation_analysis=request.get("orientation_analysis") or {},
         )
 
         return {
+            "material_slug": breakdown.material_slug,
+            "model_volume_cc": breakdown.model_volume_cc,
+            "support_volume_cc": breakdown.support_volume_cc,
+            "effective_volume_cc": breakdown.effective_volume_cc,
             "final_price": breakdown.final_price,
             "base_display_price": breakdown.base_manufacturing_cost,
             "gst_amount": breakdown.gst_amount,
             "delivery_charges": breakdown.delivery_fee,
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         print("PRICING ERROR:", str(e))
-
-        return {
-            "final_price": 1240,
-            "base_display_price": 1050,
-            "gst_amount": 190,
-            "delivery_charges": 0,
-        }
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Pricing calculation failed: {e}",
+        )
