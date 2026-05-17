@@ -66,6 +66,7 @@ async def quick_calculate(request: dict = Body(...)):
             "delivery_charges": breakdown.delivery_fee,
             "delivery_fee": breakdown.delivery_fee,
             "final_price": breakdown.final_price,
+            "estimated_print_time_hrs": breakdown.estimated_print_time_hrs,
         }
 
     except HTTPException:
