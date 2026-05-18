@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import Dict, Tuple
 from decimal import Decimal
 from enum import Enum
-import math
 
 # =========================================================
 # ENUMS
@@ -26,11 +25,13 @@ GST_RATE = Decimal("0.18")
 BASE_COST = Decimal("50")
 SETUP_OVERHEAD_HRS = 0.5
 
+
 # =========================================================
 # PRICING CHART
 # =========================================================
 
 PRICING_CHART: Dict = {
+
     "pla": {
         ComplexityLevel.SIMPLE: {
             MachineTier.DESKTOP: (3, 6),
@@ -112,6 +113,7 @@ PRICING_CHART: Dict = {
     },
 }
 
+
 DEFAULT_PRICING = {
     ComplexityLevel.SIMPLE: {
         MachineTier.DESKTOP: (10, 20),
@@ -119,6 +121,11 @@ DEFAULT_PRICING = {
         MachineTier.INDUSTRY: (100, 180),
     },
 }
+
+
+# =========================================================
+# FLOW RATE
+# =========================================================
 
 FLOW_RATE_CC_PER_HR = {
     "pla": 18,
@@ -133,6 +140,11 @@ FLOW_RATE_CC_PER_HR = {
     "pa12": 25,
 }
 
+
+# =========================================================
+# DENSITY
+# =========================================================
+
 MATERIAL_DENSITY = {
     "pla": 1.24,
     "abs": 1.04,
@@ -146,12 +158,14 @@ MATERIAL_DENSITY = {
     "pa12": 1.01,
 }
 
+
 # =========================================================
 # PRICE BREAKDOWN
 # =========================================================
 
 @dataclass
 class PriceBreakdown:
+
     model_volume_cc: float
     support_volume_cc: float
     effective_volume_cc: float
@@ -190,11 +204,20 @@ class PriceBreakdown:
 # =========================================================
 
 def get_infill_factor(infill_percent: int) -> float:
+
     safe_percent = max(0, min(infill_percent, 100))
-    return round(0.28 + (0.72 * (safe_percent / 100)), 4)
+
+    return round(
+        0.28 + (0.72 * (safe_percent / 100)),
+        4
+    )
 
 
-def get_support_factor(material_slug: str, support_volume_cc: float) -> float:
+def get_support_factor(
+    material_slug: str,
+    support_volume_cc: float
+) -> float:
+
     return 1.0
 
 
@@ -210,27 +233,42 @@ def apply_large_part_discount(
 
     rate = material_rate
 
-    # HUGE PARTS
+    # =========================================
+    # LARGE SCALE ECONOMICS
+    # =========================================
+
     if effective_volume_cc > 30000:
-        rate *= 0.22
+        rate *= 0.12
 
     elif effective_volume_cc > 20000:
-        rate *= 0.30
+        rate *= 0.18
 
     elif effective_volume_cc > 10000:
-        rate *= 0.42
+        rate *= 0.28
 
     elif effective_volume_cc > 5000:
-        rate *= 0.60
+        rate *= 0.42
 
-    # Cheap bulk materials
+    elif effective_volume_cc > 2000:
+        rate *= 0.65
+
+    # =========================================
+    # BULK PLA / PETG / ABS CHEAPER
+    # =========================================
+
     if material_slug in ["pla", "petg", "abs"]:
 
-        if effective_volume_cc > 10000:
-            rate *= 0.7
+        if effective_volume_cc > 5000:
+            rate *= 0.75
 
-    # Safety floor
-    return round(max(rate, 0.35), 2)
+        elif effective_volume_cc > 2000:
+            rate *= 0.85
+
+    # =========================================
+    # SAFETY FLOOR
+    # =========================================
+
+    return round(max(rate, 0.22), 2)
 
 
 # =========================================================
@@ -338,20 +376,25 @@ def estimate_print_time(
         15
     )
 
+    # Industrial fast assumptions
+
     if effective_volume_cc > 30000:
-        flow_rate = base_flow * 18
+        flow_rate = base_flow * 30
 
     elif effective_volume_cc > 20000:
-        flow_rate = base_flow * 14
+        flow_rate = base_flow * 24
 
     elif effective_volume_cc > 10000:
-        flow_rate = base_flow * 10
+        flow_rate = base_flow * 18
 
     elif effective_volume_cc > 5000:
-        flow_rate = base_flow * 6
+        flow_rate = base_flow * 12
+
+    elif effective_volume_cc > 2000:
+        flow_rate = base_flow * 7
 
     elif effective_volume_cc > 1000:
-        flow_rate = base_flow * 3
+        flow_rate = base_flow * 4
 
     else:
         flow_rate = base_flow
@@ -386,17 +429,23 @@ def calculate_price(
         raise ValueError("quantity must be at least 1")
 
     # Resolve tier
+
     try:
         tier = MachineTier(machine_tier)
 
     except ValueError:
         tier = MachineTier.DESKTOP
 
-    # AUTO LOW INFILL FOR HUGE SHOWPIECES
-    if model_volume_cc > 5000:
-        infill_percent = min(infill_percent, 5)
+    # =========================================
+    # AUTO LOW INFILL FOR HUGE PARTS
+    # =========================================
 
-    infill_factor = get_infill_factor(infill_percent)
+    if model_volume_cc > 5000:
+        infill_percent = min(infill_percent, 4)
+
+    infill_factor = get_infill_factor(
+        infill_percent
+    )
 
     support_factor = get_support_factor(
         material_slug,
@@ -415,6 +464,10 @@ def calculate_price(
         2
     )
 
+    # =========================================
+    # MATERIAL RATE
+    # =========================================
+
     material_rate, range_min_rate, range_max_rate = get_material_rate(
         material_slug,
         complexity_level,
@@ -422,14 +475,20 @@ def calculate_price(
         effective_volume_cc,
     )
 
-    # APPLY LARGE PART ECONOMICS
+    # =========================================
+    # LARGE PART ECONOMICS
+    # =========================================
+
     material_rate = apply_large_part_discount(
         material_rate,
         effective_volume_cc,
         material_slug,
     )
 
-    # Material weight
+    # =========================================
+    # MATERIAL WEIGHT
+    # =========================================
+
     density = MATERIAL_DENSITY.get(
         material_slug,
         1.0
@@ -440,7 +499,10 @@ def calculate_price(
         2
     )
 
-    # Core manufacturing
+    # =========================================
+    # MANUFACTURING COST
+    # =========================================
+
     base_manufacturing_cost = round(
         effective_volume_cc * material_rate,
         2
@@ -448,11 +510,14 @@ def calculate_price(
 
     adjusted_manufacturing_cost = base_manufacturing_cost
 
-    # Add base order cost
     adjusted_with_base = (
         adjusted_manufacturing_cost +
         float(BASE_COST)
     )
+
+    # =========================================
+    # FEES
+    # =========================================
 
     platform_fee = get_platform_fee(
         adjusted_with_base
@@ -466,6 +531,10 @@ def calculate_price(
     delivery_fee = get_delivery_fee(
         delivery_tier
     )
+
+    # =========================================
+    # TOTALS
+    # =========================================
 
     subtotal = round(
         adjusted_with_base +
@@ -487,7 +556,10 @@ def calculate_price(
         2
     )
 
+    # =========================================
     # PRICE RANGE
+    # =========================================
+
     scaled_min = apply_large_part_discount(
         range_min_rate,
         effective_volume_cc,
@@ -514,12 +586,21 @@ def calculate_price(
         2
     )
 
+    # =========================================
+    # PRINT TIME
+    # =========================================
+
     estimated_print_time_hrs = estimate_print_time(
         effective_volume_cc,
         material_slug,
     )
 
+    # =========================================
+    # RESPONSE
+    # =========================================
+
     return PriceBreakdown(
+
         model_volume_cc=model_volume_cc,
         support_volume_cc=support_volume_cc,
         effective_volume_cc=effective_volume_cc,
