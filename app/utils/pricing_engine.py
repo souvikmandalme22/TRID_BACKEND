@@ -97,6 +97,9 @@ class PriceBreakdown:
     final_price: float
 
     estimated_print_time_hrs: float
+    
+    complexity_multiplier: float = 1.0
+    orientation_multiplier: float = 1.0
 
 
 # =========================================================
@@ -155,6 +158,63 @@ def estimate_print_time(volume: float) -> float:
 
 
 # =========================================================
+# COMPLEXITY & ORIENTATION MULTIPLIERS
+# =========================================================
+
+def calculate_complexity_multiplier(complexity_features: dict) -> float:
+    """
+    Calculate multiplier based on complexity features
+    Each feature adds 5-15% to the base cost
+    """
+    if not complexity_features:
+        return 1.0
+    
+    multiplier = 1.0
+    
+    # Feature costs (as percentage increase)
+    feature_costs = {
+        "thin_wall": 0.10,           # 10% premium
+        "internal_channels": 0.12,   # 12% premium
+        "text_or_logo": 0.08,        # 8% premium
+        "high_support": 0.15,        # 15% premium (most expensive)
+        "orientation_sensitive": 0.10,
+        "tiny_features": 0.12,
+        "tolerance_critical": 0.15,
+    }
+    
+    for feature, cost in feature_costs.items():
+        if complexity_features.get(feature, False):
+            multiplier += cost
+    
+    return round(multiplier, 2)
+
+
+def calculate_orientation_multiplier(orientation_analysis: dict) -> float:
+    """
+    Calculate multiplier based on orientation analysis
+    Warp risk and failure risk increase costs
+    """
+    if not orientation_analysis:
+        return 1.0
+    
+    multiplier = 1.0
+    
+    # Base factors
+    if orientation_analysis.get("warp_risk", False):
+        multiplier += 0.10  # 10% for warp risk
+    
+    if orientation_analysis.get("tall_geometry", False):
+        multiplier += 0.08  # 8% for tall geometry
+    
+    # Continuous failure risk factor (0-1 scale)
+    failure_risk = orientation_analysis.get("failure_risk", 0.0)
+    if failure_risk > 0:
+        multiplier += (failure_risk * 0.20)  # Up to 20% penalty
+    
+    return round(multiplier, 2)
+
+
+# =========================================================
 # MAIN ENGINE (FIXED ARCHITECTURE)
 # =========================================================
 
@@ -166,7 +226,14 @@ def calculate_price(
     quantity: int,
     machine_tier: str = "desktop",
     delivery_type: str = "standard",
+    complexity_features: dict = None,
+    orientation_analysis: dict = None,
 ) -> PriceBreakdown:
+
+    if complexity_features is None:
+        complexity_features = {}
+    if orientation_analysis is None:
+        orientation_analysis = {}
 
     tier = MachineTier(machine_tier)
 
@@ -212,6 +279,15 @@ def calculate_price(
 
     adjusted_cost += float(BASE_COST)
 
+    # ─────────────────────────────────────
+    # COMPLEXITY & ORIENTATION MULTIPLIERS
+    # ─────────────────────────────────────
+    complexity_mult = calculate_complexity_multiplier(complexity_features)
+    orientation_mult = calculate_orientation_multiplier(orientation_analysis)
+    
+    # Apply multipliers to adjusted cost
+    adjusted_cost = adjusted_cost * complexity_mult * orientation_mult
+
     # -----------------------------
     # ORDER FEES (FIXED STRUCTURE)
     # -----------------------------
@@ -255,4 +331,7 @@ def calculate_price(
         final_price=final,
 
         estimated_print_time_hrs=estimate_print_time(effective_volume),
+        
+        complexity_multiplier=complexity_mult,
+        orientation_multiplier=orientation_mult,
     )
