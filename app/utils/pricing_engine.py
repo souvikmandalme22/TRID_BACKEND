@@ -211,17 +211,17 @@ def apply_large_part_discount(
     rate = material_rate
 
     # HUGE PARTS
-    if effective_volume_cc > 30000:
-        rate *= 0.12
+if effective_volume_cc > 30000:
+    rate *= 0.22
 
-    elif effective_volume_cc > 20000:
-        rate *= 0.18
+elif effective_volume_cc > 20000:
+    rate *= 0.30
 
-    elif effective_volume_cc > 10000:
-        rate *= 0.28
+elif effective_volume_cc > 10000:
+    rate *= 0.42
 
-    elif effective_volume_cc > 5000:
-        rate *= 0.45
+elif effective_volume_cc > 5000:
+    rate *= 0.60
 
     # Cheap bulk materials
     if material_slug in ["pla", "petg", "abs"]:
