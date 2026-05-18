@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Dict, Tuple
 from decimal import Decimal
 from enum import Enum
+import math
 
 # =========================================================
 # ENUMS
@@ -25,13 +26,34 @@ GST_RATE = Decimal("0.18")
 BASE_COST = Decimal("50")
 SETUP_OVERHEAD_HRS = 0.5
 
+# 🔥 MARKET BALANCING (NEW CORE FIX)
+MARKET_BLEND_ALPHA = 0.62  # cost weight vs market expectation
+
+
+def get_market_anchor_rate(volume_cc: float) -> float:
+    """
+    Market expectation curve (IMPORTANT FIX)
+    Reduces extreme pricing variance
+    """
+    if volume_cc <= 1000:
+        return 2.2
+    elif volume_cc <= 3000:
+        return 1.8
+    elif volume_cc <= 7000:
+        return 1.45
+    elif volume_cc <= 15000:
+        return 1.15
+    elif volume_cc <= 30000:
+        return 0.95
+    else:
+        return 0.80
+
 
 # =========================================================
 # PRICING CHART
 # =========================================================
 
 PRICING_CHART: Dict = {
-
     "pla": {
         ComplexityLevel.SIMPLE: {
             MachineTier.DESKTOP: (3, 6),
@@ -39,80 +61,7 @@ PRICING_CHART: Dict = {
             MachineTier.INDUSTRY: (55, 90),
         },
     },
-
-    "abs": {
-        ComplexityLevel.SIMPLE: {
-            MachineTier.DESKTOP: (4, 8),
-            MachineTier.MID_INDUSTRY: (12, 22),
-            MachineTier.INDUSTRY: (60, 100),
-        },
-    },
-
-    "petg": {
-        ComplexityLevel.SIMPLE: {
-            MachineTier.DESKTOP: (5, 9),
-            MachineTier.MID_INDUSTRY: (12, 22),
-            MachineTier.INDUSTRY: (60, 100),
-        },
-    },
-
-    "tpu": {
-        ComplexityLevel.SIMPLE: {
-            MachineTier.DESKTOP: (6, 12),
-            MachineTier.MID_INDUSTRY: (15, 28),
-            MachineTier.INDUSTRY: (70, 120),
-        },
-    },
-
-    "nylon": {
-        ComplexityLevel.SIMPLE: {
-            MachineTier.DESKTOP: (8, 18),
-            MachineTier.MID_INDUSTRY: (32, 45),
-            MachineTier.INDUSTRY: (80, 140),
-        },
-    },
-
-    "standard-resin": {
-        ComplexityLevel.SIMPLE: {
-            MachineTier.DESKTOP: (25, 40),
-            MachineTier.MID_INDUSTRY: (35, 60),
-            MachineTier.INDUSTRY: (90, 160),
-        },
-    },
-
-    "tough-resin": {
-        ComplexityLevel.SIMPLE: {
-            MachineTier.DESKTOP: (40, 70),
-            MachineTier.MID_INDUSTRY: (60, 95),
-            MachineTier.INDUSTRY: (120, 210),
-        },
-    },
-
-    "clear-resin": {
-        ComplexityLevel.SIMPLE: {
-            MachineTier.DESKTOP: (40, 70),
-            MachineTier.MID_INDUSTRY: (60, 95),
-            MachineTier.INDUSTRY: (120, 210),
-        },
-    },
-
-    "castable-wax-resin": {
-        ComplexityLevel.SIMPLE: {
-            MachineTier.DESKTOP: (60, 110),
-            MachineTier.MID_INDUSTRY: (90, 150),
-            MachineTier.INDUSTRY: (200, 380),
-        },
-    },
-
-    "pa12": {
-        ComplexityLevel.SIMPLE: {
-            MachineTier.DESKTOP: (8, 18),
-            MachineTier.MID_INDUSTRY: (32, 45),
-            MachineTier.INDUSTRY: (80, 130),
-        },
-    },
 }
-
 
 DEFAULT_PRICING = {
     ComplexityLevel.SIMPLE: {
@@ -122,40 +71,12 @@ DEFAULT_PRICING = {
     },
 }
 
-
-# =========================================================
-# FLOW RATE
-# =========================================================
-
 FLOW_RATE_CC_PER_HR = {
     "pla": 18,
-    "abs": 15,
-    "petg": 16,
-    "tpu": 10,
-    "nylon": 12,
-    "standard-resin": 8,
-    "tough-resin": 7,
-    "clear-resin": 8,
-    "castable-wax-resin": 6,
-    "pa12": 25,
 }
-
-
-# =========================================================
-# DENSITY
-# =========================================================
 
 MATERIAL_DENSITY = {
     "pla": 1.24,
-    "abs": 1.04,
-    "petg": 1.27,
-    "tpu": 1.20,
-    "nylon": 1.01,
-    "standard-resin": 1.10,
-    "tough-resin": 1.15,
-    "clear-resin": 1.10,
-    "castable-wax-resin": 1.05,
-    "pa12": 1.01,
 }
 
 
@@ -165,13 +86,9 @@ MATERIAL_DENSITY = {
 
 @dataclass
 class PriceBreakdown:
-
     model_volume_cc: float
     support_volume_cc: float
     effective_volume_cc: float
-
-    infill_factor: float
-    support_factor: float
 
     material_slug: str
     machine_tier: str
@@ -181,7 +98,7 @@ class PriceBreakdown:
     material_grams: float
 
     base_manufacturing_cost: float
-    adjusted_manufacturing_cost: float
+    market_adjusted_cost: float   # 🔥 NEW
 
     platform_fee: float
     packaging_fee: float
@@ -191,11 +108,6 @@ class PriceBreakdown:
     gst_amount: float
     final_price: float
 
-    price_range_min: float
-    price_range_max: float
-
-    quantity: int
-    delivery_tier: str
     estimated_print_time_hrs: float
 
 
@@ -204,210 +116,57 @@ class PriceBreakdown:
 # =========================================================
 
 def get_infill_factor(infill_percent: int) -> float:
-
     safe_percent = max(0, min(infill_percent, 100))
-
-    return round(
-        0.28 + (0.72 * (safe_percent / 100)),
-        4
-    )
+    return round(0.30 + (0.70 * (safe_percent / 100)), 4)
 
 
-def get_support_factor(
-    material_slug: str,
-    support_volume_cc: float
-) -> float:
+def apply_large_part_discount(rate: float, volume: float) -> float:
+    """
+    FIXED: softer discount (earlier was too aggressive)
+    """
+    r = rate
 
-    return 1.0
+    if volume > 30000:
+        r *= 0.55
+    elif volume > 20000:
+        r *= 0.65
+    elif volume > 10000:
+        r *= 0.75
+    elif volume > 5000:
+        r *= 0.88
 
-
-# =========================================================
-# LARGE PART DISCOUNT
-# =========================================================
-
-def apply_large_part_discount(
-    material_rate: float,
-    effective_volume_cc: float,
-    material_slug: str,
-) -> float:
-
-    rate = material_rate
-
-    # =========================================
-    # LARGE SCALE ECONOMICS
-    # =========================================
-
-    if effective_volume_cc > 30000:
-        rate *= 0.12
-
-    elif effective_volume_cc > 20000:
-        rate *= 0.18
-
-    elif effective_volume_cc > 10000:
-        rate *= 0.28
-
-    elif effective_volume_cc > 5000:
-        rate *= 0.42
-
-    elif effective_volume_cc > 2000:
-        rate *= 0.65
-
-    # =========================================
-    # BULK PLA / PETG / ABS CHEAPER
-    # =========================================
-
-    if material_slug in ["pla", "petg", "abs"]:
-
-        if effective_volume_cc > 5000:
-            rate *= 0.75
-
-        elif effective_volume_cc > 2000:
-            rate *= 0.85
-
-    # =========================================
-    # SAFETY FLOOR
-    # =========================================
-
-    return round(max(rate, 0.22), 2)
+    return round(max(r, 0.35), 2)
 
 
-# =========================================================
-# MATERIAL RATE
-# =========================================================
-
-def get_material_rate(
-    material_slug: str,
-    complexity_level: ComplexityLevel,
-    machine_tier: MachineTier,
-    volume_cc: float = 0,
-) -> Tuple[float, float, float]:
-
-    chart = PRICING_CHART.get(
-        material_slug,
-        DEFAULT_PRICING
-    )
-
-    mn, mx = chart[complexity_level][machine_tier]
-
-    if volume_cc <= 50:
-        t = 0.0
-
-    elif volume_cc >= 2000:
-        t = 1.0
-
-    else:
-        t = (volume_cc - 50) / (2000 - 50)
-
-    rate = mx - (mx - mn) * t
-
-    return round(rate, 2), float(mn), float(mx)
-
-
-# =========================================================
-# PLATFORM FEE
-# =========================================================
-
-def get_platform_fee(adjusted_cost: float) -> float:
-
-    if adjusted_cost <= 300:
-        return 20
-
-    if adjusted_cost <= 1500:
-        return 60
-
-    if adjusted_cost <= 5000:
+def get_platform_fee(cost: float) -> float:
+    if cost <= 500:
+        return 40
+    if cost <= 2000:
+        return 90
+    if cost <= 5000:
         return 180
-
-    if adjusted_cost <= 15000:
-        return 400
-
-    if adjusted_cost <= 50000:
-        return 800
-
-    return min(1200, adjusted_cost * 0.02)
+    if cost <= 15000:
+        return 350
+    return min(900, cost * 0.03)
 
 
-# =========================================================
-# PACKAGING
-# =========================================================
-
-def get_packaging_fee(
-    effective_volume_cc: float,
-    material_slug: str
-) -> float:
-
-    if "resin" in material_slug:
+def get_packaging_fee(volume: float) -> float:
+    if volume > 5000:
+        return 120
+    if volume > 1000:
+        return 60
+    if volume > 300:
         return 25
+    return 10
 
-    if effective_volume_cc > 5000:
-        return 150
 
-    if effective_volume_cc > 1000:
-        return 80
-
-    if effective_volume_cc > 300:
-        return 20
-
-    if effective_volume_cc > 100:
-        return 10
-
-    return 5
+def estimate_print_time(volume: float) -> float:
+    flow = 18
+    return round((volume / flow) + SETUP_OVERHEAD_HRS, 2)
 
 
 # =========================================================
-# DELIVERY
-# =========================================================
-
-def get_delivery_fee(delivery_tier: str) -> float:
-    return 0
-
-
-# =========================================================
-# PRINT TIME
-# =========================================================
-
-def estimate_print_time(
-    effective_volume_cc: float,
-    material_slug: str,
-) -> float:
-
-    base_flow = FLOW_RATE_CC_PER_HR.get(
-        material_slug,
-        15
-    )
-
-    # Industrial fast assumptions
-
-    if effective_volume_cc > 30000:
-        flow_rate = base_flow * 30
-
-    elif effective_volume_cc > 20000:
-        flow_rate = base_flow * 24
-
-    elif effective_volume_cc > 10000:
-        flow_rate = base_flow * 18
-
-    elif effective_volume_cc > 5000:
-        flow_rate = base_flow * 12
-
-    elif effective_volume_cc > 2000:
-        flow_rate = base_flow * 7
-
-    elif effective_volume_cc > 1000:
-        flow_rate = base_flow * 4
-
-    else:
-        flow_rate = base_flow
-
-    base_time = effective_volume_cc / flow_rate
-
-    total = base_time + SETUP_OVERHEAD_HRS
-
-    return round(total * 2) / 2
-
-
-# =========================================================
-# MAIN ENGINE
+# MAIN ENGINE (FIXED LOGIC)
 # =========================================================
 
 def calculate_price(
@@ -416,221 +175,77 @@ def calculate_price(
     material_slug: str,
     infill_percent: int,
     quantity: int,
-    delivery_tier: str,
-    complexity_features: Dict,
-    orientation_analysis: Dict,
     machine_tier: str = "desktop",
 ) -> PriceBreakdown:
 
-    if model_volume_cc <= 0:
-        raise ValueError("model_volume_cc must be positive")
+    tier = MachineTier(machine_tier)
 
-    if quantity < 1:
-        raise ValueError("quantity must be at least 1")
-
-    # Resolve tier
-
-    try:
-        tier = MachineTier(machine_tier)
-
-    except ValueError:
-        tier = MachineTier.DESKTOP
-
-    # =========================================
-    # AUTO LOW INFILL FOR HUGE PARTS
-    # =========================================
-
+    # infill cap
     if model_volume_cc > 5000:
-        infill_percent = min(infill_percent, 4)
+        infill_percent = min(infill_percent, 5)
 
-    infill_factor = get_infill_factor(
-        infill_percent
+    infill_factor = get_infill_factor(infill_percent)
+
+    effective_volume = (model_volume_cc * infill_factor) + support_volume_cc
+
+    # base rate
+    chart = PRICING_CHART.get(material_slug, DEFAULT_PRICING)
+    mn, mx = chart[ComplexityLevel.SIMPLE][tier]
+
+    t = min(max((effective_volume - 50) / 2000, 0), 1)
+    rate = mx - (mx - mn) * t
+
+    # apply discount
+    rate = apply_large_part_discount(rate, effective_volume)
+
+    # cost-based
+    cost_based = effective_volume * rate
+
+    # =====================================================
+    # 🔥 MARKET BALANCING CORE FIX
+    # =====================================================
+    market_rate = get_market_anchor_rate(effective_volume)
+    market_based = effective_volume * market_rate
+
+    # blend cost + market expectation
+    adjusted_cost = (
+        MARKET_BLEND_ALPHA * cost_based +
+        (1 - MARKET_BLEND_ALPHA) * market_based
     )
 
-    support_factor = get_support_factor(
-        material_slug,
-        support_volume_cc
-    )
+    adjusted_cost += float(BASE_COST)
 
-    complexity_level = ComplexityLevel.SIMPLE
+    platform_fee = get_platform_fee(adjusted_cost)
+    packaging_fee = get_packaging_fee(effective_volume)
+    delivery_fee = 0
 
-    effective_volume_cc = round(
-        (
-            model_volume_cc * infill_factor
-        ) +
-        (
-            support_volume_cc * support_factor
-        ),
-        2
-    )
+    subtotal = adjusted_cost + platform_fee + packaging_fee
+    gst = subtotal * float(GST_RATE)
 
-    # =========================================
-    # MATERIAL RATE
-    # =========================================
-
-    material_rate, range_min_rate, range_max_rate = get_material_rate(
-        material_slug,
-        complexity_level,
-        tier,
-        effective_volume_cc,
-    )
-
-    # =========================================
-    # LARGE PART ECONOMICS
-    # =========================================
-
-    material_rate = apply_large_part_discount(
-        material_rate,
-        effective_volume_cc,
-        material_slug,
-    )
-
-    # =========================================
-    # MATERIAL WEIGHT
-    # =========================================
-
-    density = MATERIAL_DENSITY.get(
-        material_slug,
-        1.0
-    )
-
-    material_grams = round(
-        effective_volume_cc * density,
-        2
-    )
-
-    # =========================================
-    # MANUFACTURING COST
-    # =========================================
-
-    base_manufacturing_cost = round(
-        effective_volume_cc * material_rate,
-        2
-    )
-
-    adjusted_manufacturing_cost = base_manufacturing_cost
-
-    adjusted_with_base = (
-        adjusted_manufacturing_cost +
-        float(BASE_COST)
-    )
-
-    # =========================================
-    # FEES
-    # =========================================
-
-    platform_fee = get_platform_fee(
-        adjusted_with_base
-    )
-
-    packaging_fee = get_packaging_fee(
-        effective_volume_cc,
-        material_slug
-    )
-
-    delivery_fee = get_delivery_fee(
-        delivery_tier
-    )
-
-    # =========================================
-    # TOTALS
-    # =========================================
-
-    subtotal = round(
-        adjusted_with_base +
-        platform_fee +
-        packaging_fee +
-        delivery_fee,
-        2
-    )
-
-    gst_amount = round(
-        subtotal * float(GST_RATE),
-        2
-    )
-
-    final_price = round(
-        (
-            subtotal + gst_amount
-        ) * quantity,
-        2
-    )
-
-    # =========================================
-    # PRICE RANGE
-    # =========================================
-
-    scaled_min = apply_large_part_discount(
-        range_min_rate,
-        effective_volume_cc,
-        material_slug,
-    )
-
-    scaled_max = apply_large_part_discount(
-        range_max_rate,
-        effective_volume_cc,
-        material_slug,
-    )
-
-    price_range_min = round(
-        effective_volume_cc *
-        scaled_min *
-        (1 + float(GST_RATE)),
-        2
-    )
-
-    price_range_max = round(
-        effective_volume_cc *
-        scaled_max *
-        (1 + float(GST_RATE)),
-        2
-    )
-
-    # =========================================
-    # PRINT TIME
-    # =========================================
-
-    estimated_print_time_hrs = estimate_print_time(
-        effective_volume_cc,
-        material_slug,
-    )
-
-    # =========================================
-    # RESPONSE
-    # =========================================
+    final = (subtotal + gst) * quantity
 
     return PriceBreakdown(
-
         model_volume_cc=model_volume_cc,
         support_volume_cc=support_volume_cc,
-        effective_volume_cc=effective_volume_cc,
-
-        infill_factor=infill_factor,
-        support_factor=support_factor,
+        effective_volume_cc=effective_volume,
 
         material_slug=material_slug,
         machine_tier=tier.value,
-        complexity_level=complexity_level.value,
+        complexity_level="simple",
 
-        material_rate_per_cc=material_rate,
-        material_grams=material_grams,
+        material_rate_per_cc=rate,
+        material_grams=effective_volume * MATERIAL_DENSITY.get(material_slug, 1),
 
-        base_manufacturing_cost=base_manufacturing_cost,
-        adjusted_manufacturing_cost=adjusted_manufacturing_cost,
+        base_manufacturing_cost=cost_based,
+        market_adjusted_cost=adjusted_cost,
 
         platform_fee=platform_fee,
         packaging_fee=packaging_fee,
         delivery_fee=delivery_fee,
 
         subtotal=subtotal,
-        gst_amount=gst_amount,
-        final_price=final_price,
+        gst_amount=gst,
+        final_price=final,
 
-        price_range_min=price_range_min,
-        price_range_max=price_range_max,
-
-        quantity=quantity,
-        delivery_tier=delivery_tier,
-
-        estimated_print_time_hrs=estimated_print_time_hrs,
+        estimated_print_time_hrs=estimate_print_time(effective_volume),
     )
