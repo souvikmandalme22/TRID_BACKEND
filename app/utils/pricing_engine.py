@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, Tuple
+from typing import Dict
 from decimal import Decimal
 from enum import Enum
 import math
@@ -26,27 +26,17 @@ GST_RATE = Decimal("0.18")
 BASE_COST = Decimal("50")
 SETUP_OVERHEAD_HRS = 0.5
 
-# 🔥 MARKET BALANCING (NEW CORE FIX)
-MARKET_BLEND_ALPHA = 0.62  # cost weight vs market expectation
 
+# =========================================================
+# SMOOTH MARKET CURVE (FIXED - NO CLIFfS)
+# =========================================================
 
 def get_market_anchor_rate(volume_cc: float) -> float:
     """
-    Market expectation curve (IMPORTANT FIX)
-    Reduces extreme pricing variance
+    Smooth exponential decay instead of step function
+    Fixes pricing jumps at 1k / 3k / 7k / etc
     """
-    if volume_cc <= 1000:
-        return 2.2
-    elif volume_cc <= 3000:
-        return 1.8
-    elif volume_cc <= 7000:
-        return 1.45
-    elif volume_cc <= 15000:
-        return 1.15
-    elif volume_cc <= 30000:
-        return 0.95
-    else:
-        return 0.80
+    return 2.3 * math.exp(-volume_cc / 18000) + 0.65
 
 
 # =========================================================
@@ -71,17 +61,15 @@ DEFAULT_PRICING = {
     },
 }
 
-FLOW_RATE_CC_PER_HR = {
-    "pla": 18,
-}
-
 MATERIAL_DENSITY = {
     "pla": 1.24,
 }
 
+FLOW_RATE_CC_PER_HR = 18
+
 
 # =========================================================
-# PRICE BREAKDOWN
+# OUTPUT STRUCTURE
 # =========================================================
 
 @dataclass
@@ -98,7 +86,7 @@ class PriceBreakdown:
     material_grams: float
 
     base_manufacturing_cost: float
-    market_adjusted_cost: float   # 🔥 NEW
+    market_adjusted_cost: float
 
     platform_fee: float
     packaging_fee: float
@@ -116,26 +104,24 @@ class PriceBreakdown:
 # =========================================================
 
 def get_infill_factor(infill_percent: int) -> float:
-    safe_percent = max(0, min(infill_percent, 100))
-    return round(0.30 + (0.70 * (safe_percent / 100)), 4)
+    safe = max(0, min(infill_percent, 100))
+    return 0.30 + (0.70 * (safe / 100))
 
 
 def apply_large_part_discount(rate: float, volume: float) -> float:
     """
-    FIXED: softer discount (earlier was too aggressive)
+    Soft discounting (prevents underpricing large parts)
     """
-    r = rate
-
     if volume > 30000:
-        r *= 0.55
+        rate *= 0.60
     elif volume > 20000:
-        r *= 0.65
+        rate *= 0.70
     elif volume > 10000:
-        r *= 0.75
+        rate *= 0.80
     elif volume > 5000:
-        r *= 0.88
+        rate *= 0.90
 
-    return round(max(r, 0.35), 2)
+    return max(round(rate, 2), 0.35)
 
 
 def get_platform_fee(cost: float) -> float:
@@ -160,13 +146,16 @@ def get_packaging_fee(volume: float) -> float:
     return 10
 
 
+def get_delivery_fee(delivery_type: str) -> float:
+    return 149 if delivery_type == "express" else 0
+
+
 def estimate_print_time(volume: float) -> float:
-    flow = 18
-    return round((volume / flow) + SETUP_OVERHEAD_HRS, 2)
+    return round((volume / FLOW_RATE_CC_PER_HR) + SETUP_OVERHEAD_HRS, 2)
 
 
 # =========================================================
-# MAIN ENGINE (FIXED LOGIC)
+# MAIN ENGINE (FIXED ARCHITECTURE)
 # =========================================================
 
 def calculate_price(
@@ -176,11 +165,14 @@ def calculate_price(
     infill_percent: int,
     quantity: int,
     machine_tier: str = "desktop",
+    delivery_type: str = "standard",
 ) -> PriceBreakdown:
 
     tier = MachineTier(machine_tier)
 
-    # infill cap
+    # -----------------------------
+    # INFILL SAFETY CAP
+    # -----------------------------
     if model_volume_cc > 5000:
         infill_percent = min(infill_percent, 5)
 
@@ -188,26 +180,31 @@ def calculate_price(
 
     effective_volume = (model_volume_cc * infill_factor) + support_volume_cc
 
-    # base rate
+    # -----------------------------
+    # MATERIAL RATE SELECTION
+    # -----------------------------
     chart = PRICING_CHART.get(material_slug, DEFAULT_PRICING)
     mn, mx = chart[ComplexityLevel.SIMPLE][tier]
 
     t = min(max((effective_volume - 50) / 2000, 0), 1)
     rate = mx - (mx - mn) * t
 
-    # apply discount
     rate = apply_large_part_discount(rate, effective_volume)
 
-    # cost-based
+    # -----------------------------
+    # COST MODEL
+    # -----------------------------
     cost_based = effective_volume * rate
 
-    # =====================================================
-    # 🔥 MARKET BALANCING CORE FIX
-    # =====================================================
+    # -----------------------------
+    # MARKET MODEL (SMOOTHED)
+    # -----------------------------
     market_rate = get_market_anchor_rate(effective_volume)
     market_based = effective_volume * market_rate
 
-    # blend cost + market expectation
+    # blended pricing (balanced fairness vs profitability)
+    MARKET_BLEND_ALPHA = 0.62
+
     adjusted_cost = (
         MARKET_BLEND_ALPHA * cost_based +
         (1 - MARKET_BLEND_ALPHA) * market_based
@@ -215,14 +212,24 @@ def calculate_price(
 
     adjusted_cost += float(BASE_COST)
 
+    # -----------------------------
+    # ORDER FEES (FIXED STRUCTURE)
+    # -----------------------------
     platform_fee = get_platform_fee(adjusted_cost)
     packaging_fee = get_packaging_fee(effective_volume)
-    delivery_fee = 0
+    delivery_fee = get_delivery_fee(delivery_type)
 
-    subtotal = adjusted_cost + platform_fee + packaging_fee
+    # -----------------------------
+    # QUANTITY CORRECT MODEL
+    # -----------------------------
+    unit_cost = adjusted_cost
+    unit_total = unit_cost * quantity
+
+    order_fees = platform_fee + packaging_fee + delivery_fee
+
+    subtotal = unit_total + order_fees
     gst = subtotal * float(GST_RATE)
-
-    final = (subtotal + gst) * quantity
+    final = subtotal + gst
 
     return PriceBreakdown(
         model_volume_cc=model_volume_cc,
