@@ -211,17 +211,17 @@ def apply_large_part_discount(
     rate = material_rate
 
     # HUGE PARTS
-if effective_volume_cc > 30000:
-    rate *= 0.22
+    if effective_volume_cc > 30000:
+        rate *= 0.22
 
-elif effective_volume_cc > 20000:
-    rate *= 0.30
+    elif effective_volume_cc > 20000:
+        rate *= 0.30
 
-elif effective_volume_cc > 10000:
-    rate *= 0.42
+    elif effective_volume_cc > 10000:
+        rate *= 0.42
 
-elif effective_volume_cc > 5000:
-    rate *= 0.60
+    elif effective_volume_cc > 5000:
+        rate *= 0.60
 
     # Cheap bulk materials
     if material_slug in ["pla", "petg", "abs"]:
@@ -229,6 +229,7 @@ elif effective_volume_cc > 5000:
         if effective_volume_cc > 10000:
             rate *= 0.7
 
+    # Safety floor
     return round(max(rate, 0.35), 2)
 
 
@@ -337,7 +338,6 @@ def estimate_print_time(
         15
     )
 
-    # Faster assumption for huge prints
     if effective_volume_cc > 30000:
         flow_rate = base_flow * 18
 
