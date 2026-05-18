@@ -56,6 +56,10 @@ async def quick_calculate(request: dict = Body(...)):
             or "standard"
         )
 
+        # ✅ NOW SUPPORTED: complexity and orientation analysis
+        complexity_features = request.get("complexity_features") or {}
+        orientation_analysis = request.get("orientation_analysis") or {}
+
         breakdown = calc(
             model_volume_cc=model_volume_cc,
             support_volume_cc=support_volume_cc,
@@ -64,6 +68,8 @@ async def quick_calculate(request: dict = Body(...)):
             quantity=quantity,
             delivery_type=delivery_type,
             machine_tier=machine_tier,
+            complexity_features=complexity_features,
+            orientation_analysis=orientation_analysis,
         )
 
         return {
@@ -85,6 +91,8 @@ async def quick_calculate(request: dict = Body(...)):
             "delivery_charges": breakdown.delivery_fee,
             "delivery_fee": breakdown.delivery_fee,
             "final_price": breakdown.final_price,
+            "complexity_multiplier": breakdown.complexity_multiplier,
+            "orientation_multiplier": breakdown.orientation_multiplier,
             "estimated_print_time_hrs": breakdown.estimated_print_time_hrs,
         }
 
@@ -154,6 +162,10 @@ async def smart_pricing(request: dict = Body(...)):
             or "standard"
         )
 
+        # ✅ NOW SUPPORTED: complexity and orientation analysis
+        complexity_features = request.get("complexity_features") or {}
+        orientation_analysis = request.get("orientation_analysis") or {}
+
         breakdown = calc(
             model_volume_cc=model_volume_cc,
             support_volume_cc=support_volume_cc,
@@ -162,6 +174,8 @@ async def smart_pricing(request: dict = Body(...)):
             quantity=quantity,
             delivery_type=delivery_type,
             machine_tier=machine_tier,
+            complexity_features=complexity_features,
+            orientation_analysis=orientation_analysis,
         )
 
         ai_data = {
@@ -176,6 +190,8 @@ async def smart_pricing(request: dict = Body(...)):
 
         return {
             "engine_price": breakdown.final_price,
+            "complexity_multiplier": breakdown.complexity_multiplier,
+            "orientation_multiplier": breakdown.orientation_multiplier,
             "ai_suggestion": ai_result,
         }
 
