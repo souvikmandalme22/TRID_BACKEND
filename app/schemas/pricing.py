@@ -8,7 +8,7 @@ from enum import Enum
 # DELIVERY
 # =========================================================
 
-class DeliveryTier(str, Enum):
+class DeliveryType(str, Enum):
     standard = "standard"
     express = "express"
     urgent = "urgent"
@@ -49,7 +49,8 @@ class PricingRequest(BaseModel):
 
     quantity: int = 1
 
-    delivery_tier: DeliveryTier = DeliveryTier.standard
+    # FIXED: unified naming
+    delivery_type: DeliveryType = DeliveryType.standard
 
     # Core Geometry
     model_volume_cc: float
@@ -99,9 +100,7 @@ class PricingRequest(BaseModel):
 
 class PricingBreakdownResponse(BaseModel):
     model_id: str
-
     material_slug: str
-
     quantity: int
 
     # Volumes
@@ -128,7 +127,7 @@ class PricingBreakdownResponse(BaseModel):
     gst_amount: float
     final_price: float
 
-    delivery_tier: str
+    delivery_type: DeliveryType
 
     created_at: datetime
 
@@ -137,10 +136,7 @@ class PricingBreakdownResponse(BaseModel):
 
     @classmethod
     def from_orm_model(cls, obj):
-        return cls(**{
-            c: getattr(obj, c)
-            for c in cls.model_fields
-        })
+        return cls(**{c: getattr(obj, c) for c in cls.model_fields})
 
 
 # =========================================================
@@ -149,23 +145,16 @@ class PricingBreakdownResponse(BaseModel):
 
 class PricingPublicResponse(BaseModel):
     model_id: str
-
     material_slug: str
-
     quantity: int
 
     effective_volume_cc: float
-
     adjusted_manufacturing_cost: float
-
     delivery_fee: float
-
     gst_amount: float
-
     final_price: float
 
-    delivery_tier: str
-
+    delivery_type: DeliveryType
     created_at: datetime
 
     @classmethod
@@ -179,6 +168,6 @@ class PricingPublicResponse(BaseModel):
             delivery_fee=obj.delivery_fee,
             gst_amount=obj.gst_amount,
             final_price=obj.final_price,
-            delivery_tier=obj.delivery_tier,
+            delivery_type=obj.delivery_type,
             created_at=obj.created_at,
         )
