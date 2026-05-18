@@ -63,8 +63,6 @@ async def quick_calculate(request: dict = Body(...)):
             infill_percent=infill_percent,
             quantity=quantity,
             delivery_type=delivery_type,
-            complexity_features=request.get("complexity_features") or {},
-            orientation_analysis=request.get("orientation_analysis") or {},
             machine_tier=machine_tier,
         )
 
@@ -79,7 +77,7 @@ async def quick_calculate(request: dict = Body(...)):
             "material_rate_per_cc": breakdown.material_rate_per_cc,
             "base_display_price": breakdown.base_manufacturing_cost,
             "base_manufacturing_cost": breakdown.base_manufacturing_cost,
-            "adjusted_manufacturing_cost": breakdown.adjusted_manufacturing_cost,
+            "adjusted_manufacturing_cost": breakdown.market_adjusted_cost,
             "platform_fee": breakdown.platform_fee,
             "packaging_fee": breakdown.packaging_fee,
             "subtotal": breakdown.subtotal,
@@ -87,8 +85,6 @@ async def quick_calculate(request: dict = Body(...)):
             "delivery_charges": breakdown.delivery_fee,
             "delivery_fee": breakdown.delivery_fee,
             "final_price": breakdown.final_price,
-            "price_range_min": breakdown.price_range_min,
-            "price_range_max": breakdown.price_range_max,
             "estimated_print_time_hrs": breakdown.estimated_print_time_hrs,
         }
 
@@ -165,8 +161,6 @@ async def smart_pricing(request: dict = Body(...)):
             infill_percent=infill_percent,
             quantity=quantity,
             delivery_type=delivery_type,
-            complexity_features=request.get("complexity_features") or {},
-            orientation_analysis=request.get("orientation_analysis") or {},
             machine_tier=machine_tier,
         )
 
@@ -182,8 +176,6 @@ async def smart_pricing(request: dict = Body(...)):
 
         return {
             "engine_price": breakdown.final_price,
-            "price_range_min": breakdown.price_range_min,
-            "price_range_max": breakdown.price_range_max,
             "ai_suggestion": ai_result,
         }
 
