@@ -26,7 +26,7 @@ def _as_int(value, field_name: str) -> int:
 
 
 # =========================
-# 1. YOUR EXISTING ENGINE (UNCHANGED)
+# 1. ENGINE ENDPOINT
 # =========================
 @router.post("/pricing/quick-calculate")
 async def quick_calculate(request: dict = Body(...)):
@@ -39,11 +39,22 @@ async def quick_calculate(request: dict = Body(...)):
             request.get("model_volume_cc", request.get("final_effective_material_cc")),
             "model_volume_cc",
         )
-        support_volume_cc = _as_float(request.get("support_volume_cc", 0), "support_volume_cc")
+
+        support_volume_cc = _as_float(
+            request.get("support_volume_cc", 0),
+            "support_volume_cc",
+        )
+
         quantity = _as_int(request.get("quantity", 1), "quantity")
-        delivery = request.get("delivery_tier") or request.get("delivery_type") or "standard"
         infill_percent = _as_int(request.get("infill_percent", 20), "infill_percent")
         machine_tier = request.get("machine_tier") or "desktop"
+
+        # ✅ FIXED: single standard field
+        delivery_type = (
+            request.get("delivery_type")
+            or request.get("delivery_tier")
+            or "standard"
+        )
 
         breakdown = calc(
             model_volume_cc=model_volume_cc,
@@ -51,7 +62,7 @@ async def quick_calculate(request: dict = Body(...)):
             material_slug=material_slug,
             infill_percent=infill_percent,
             quantity=quantity,
-            delivery_tier=delivery,
+            delivery_type=delivery_type,
             complexity_features=request.get("complexity_features") or {},
             orientation_analysis=request.get("orientation_analysis") or {},
             machine_tier=machine_tier,
@@ -92,14 +103,10 @@ async def quick_calculate(request: dict = Body(...)):
 
 
 # =========================
-# 2. 🧠 NEW AI POWERED ENDPOINT
+# 2. AI ENDPOINT
 # =========================
 @router.post("/pricing/ai-suggest")
 async def ai_suggest(request: dict = Body(...)):
-    """
-    AI only suggests price range (does NOT override engine)
-    """
-
     try:
         data = {
             "volume": request.get("model_volume_cc"),
@@ -111,9 +118,7 @@ async def ai_suggest(request: dict = Body(...)):
 
         ai_result = get_ai_price_suggestion(data)
 
-        return {
-            "ai_suggestion": ai_result
-        }
+        return {"ai_suggestion": ai_result}
 
     except Exception as e:
         raise HTTPException(
@@ -123,16 +128,11 @@ async def ai_suggest(request: dict = Body(...)):
 
 
 # =========================
-# 3. 🔥 SMART COMBINED (BEST FOR TRID)
+# 3. SMART ENDPOINT
 # =========================
 @router.post("/pricing/smart")
 async def smart_pricing(request: dict = Body(...)):
-    """
-    Engine + AI together (recommended production endpoint)
-    """
-
     try:
-        # run engine
         material_slug = (
             request.get("material_slug") or request.get("material_key") or "pla"
         ).lower().replace("_", "-")
@@ -141,10 +141,22 @@ async def smart_pricing(request: dict = Body(...)):
             request.get("model_volume_cc", request.get("final_effective_material_cc")),
             "model_volume_cc",
         )
-        support_volume_cc = _as_float(request.get("support_volume_cc", 0), "support_volume_cc")
+
+        support_volume_cc = _as_float(
+            request.get("support_volume_cc", 0),
+            "support_volume_cc",
+        )
+
         quantity = _as_int(request.get("quantity", 1), "quantity")
         infill_percent = _as_int(request.get("infill_percent", 20), "infill_percent")
         machine_tier = request.get("machine_tier") or "desktop"
+
+        # ✅ FIXED HERE TOO
+        delivery_type = (
+            request.get("delivery_type")
+            or request.get("delivery_tier")
+            or "standard"
+        )
 
         breakdown = calc(
             model_volume_cc=model_volume_cc,
@@ -152,13 +164,12 @@ async def smart_pricing(request: dict = Body(...)):
             material_slug=material_slug,
             infill_percent=infill_percent,
             quantity=quantity,
-            delivery_tier=request.get("delivery_tier") or "standard",
+            delivery_type=delivery_type,
             complexity_features=request.get("complexity_features") or {},
             orientation_analysis=request.get("orientation_analysis") or {},
             machine_tier=machine_tier,
         )
 
-        # AI input
         ai_data = {
             "volume": breakdown.effective_volume_cc,
             "material": material_slug,
@@ -173,7 +184,7 @@ async def smart_pricing(request: dict = Body(...)):
             "engine_price": breakdown.final_price,
             "price_range_min": breakdown.price_range_min,
             "price_range_max": breakdown.price_range_max,
-            "ai_suggestion": ai_result
+            "ai_suggestion": ai_result,
         }
 
     except Exception as e:
