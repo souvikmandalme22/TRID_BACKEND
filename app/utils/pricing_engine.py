@@ -100,11 +100,40 @@ class PriceBreakdown:
     
     complexity_multiplier: float = 1.0
     orientation_multiplier: float = 1.0
+    
+    hollowing_applied: bool = False
+    hollowing_factor: float = 1.0
 
 
 # =========================================================
 # HELPERS
 # =========================================================
+
+def apply_hollowing_factor(volume_cc: float) -> tuple:
+    """
+    Large parts are printed hollow to reduce cost
+    Returns: (effective_volume, hollowing_factor, hollowing_applied)
+    """
+    
+    # Threshold: If part > 5000cc, assume it's hollow
+    HOLLOWING_THRESHOLD = 5000
+    
+    if volume_cc <= HOLLOWING_THRESHOLD:
+        # Small parts: solid
+        return volume_cc, 1.0, False
+    
+    # Large parts: hollow shell model
+    # Wall thickness typically 1-2mm, so about 70-85% reduction
+    if volume_cc <= 10000:
+        hollow_factor = 0.25  # 25% of volume (75% hollow)
+    elif volume_cc <= 20000:
+        hollow_factor = 0.20  # 20% of volume (80% hollow)
+    else:
+        hollow_factor = 0.15  # 15% of volume (85% hollow)
+    
+    effective_volume = volume_cc * hollow_factor
+    return effective_volume, hollow_factor, True
+
 
 def get_infill_factor(infill_percent: int) -> float:
     safe = max(0, min(infill_percent, 100))
@@ -173,13 +202,13 @@ def calculate_complexity_multiplier(complexity_features: dict) -> float:
     
     # Feature costs (as percentage increase)
     feature_costs = {
-        "thin_wall": 0.10,           # 10% premium
-        "internal_channels": 0.12,   # 12% premium
-        "text_or_logo": 0.08,        # 8% premium
-        "high_support": 0.15,        # 15% premium (most expensive)
-        "orientation_sensitive": 0.10,
-        "tiny_features": 0.12,
-        "tolerance_critical": 0.15,
+        "thin_wall": 0.05,           # 5% premium
+        "internal_channels": 0.08,   # 8% premium
+        "text_or_logo": 0.05,        # 5% premium
+        "high_support": 0.08,        # 8% premium
+        "orientation_sensitive": 0.05,
+        "tiny_features": 0.08,
+        "tolerance_critical": 0.08,
     }
     
     for feature, cost in feature_costs.items():
@@ -201,15 +230,15 @@ def calculate_orientation_multiplier(orientation_analysis: dict) -> float:
     
     # Base factors
     if orientation_analysis.get("warp_risk", False):
-        multiplier += 0.10  # 10% for warp risk
+        multiplier += 0.05  # 5% for warp risk
     
     if orientation_analysis.get("tall_geometry", False):
-        multiplier += 0.08  # 8% for tall geometry
+        multiplier += 0.03  # 3% for tall geometry
     
     # Continuous failure risk factor (0-1 scale)
     failure_risk = orientation_analysis.get("failure_risk", 0.0)
     if failure_risk > 0:
-        multiplier += (failure_risk * 0.20)  # Up to 20% penalty
+        multiplier += (failure_risk * 0.10)  # Up to 10% penalty
     
     return round(multiplier, 2)
 
@@ -237,15 +266,20 @@ def calculate_price(
 
     tier = MachineTier(machine_tier)
 
+    # ─────────────────────────────────────
+    # APPLY HOLLOWING FOR LARGE PARTS
+    # ─────────────────────────────────────
+    model_volume_effective, hollowing_factor, hollowing_applied = apply_hollowing_factor(model_volume_cc)
+
     # -----------------------------
     # INFILL SAFETY CAP
     # -----------------------------
-    if model_volume_cc > 5000:
+    if model_volume_effective > 5000:
         infill_percent = min(infill_percent, 5)
 
     infill_factor = get_infill_factor(infill_percent)
 
-    effective_volume = (model_volume_cc * infill_factor) + support_volume_cc
+    effective_volume = (model_volume_effective * infill_factor) + support_volume_cc
 
     # -----------------------------
     # MATERIAL RATE SELECTION
@@ -334,4 +368,7 @@ def calculate_price(
         
         complexity_multiplier=complexity_mult,
         orientation_multiplier=orientation_mult,
+        
+        hollowing_applied=hollowing_applied,
+        hollowing_factor=hollowing_factor,
     )
