@@ -36,9 +36,10 @@ async def quick_calculate(request: dict = Body(...)):
             "model_volume_cc",
         )
         support_volume_cc = _as_float(request.get("support_volume_cc", 0), "support_volume_cc")
-        quantity = _as_int(request.get("quantity", 1), "quantity")
-        delivery = request.get("delivery_tier") or request.get("delivery_type") or "standard"
-        infill_percent = _as_int(request.get("infill_percent", 20), "infill_percent")
+        quantity          = _as_int(request.get("quantity", 1), "quantity")
+        delivery          = request.get("delivery_tier") or request.get("delivery_type") or "standard"
+        infill_percent    = _as_int(request.get("infill_percent", 20), "infill_percent")
+        machine_tier      = request.get("machine_tier") or "desktop"
 
         breakdown = calc(
             model_volume_cc=model_volume_cc,
@@ -49,24 +50,31 @@ async def quick_calculate(request: dict = Body(...)):
             delivery_tier=delivery,
             complexity_features=request.get("complexity_features") or {},
             orientation_analysis=request.get("orientation_analysis") or {},
+            machine_tier=machine_tier,
         )
 
         return {
-            "material_slug": breakdown.material_slug,
-            "model_volume_cc": breakdown.model_volume_cc,
-            "support_volume_cc": breakdown.support_volume_cc,
-            "effective_volume_cc": breakdown.effective_volume_cc,
-            "base_display_price": breakdown.base_manufacturing_cost,
-            "base_manufacturing_cost": breakdown.base_manufacturing_cost,
+            "material_slug":              breakdown.material_slug,
+            "machine_tier":               breakdown.machine_tier,
+            "complexity_level":           breakdown.complexity_level,
+            "model_volume_cc":            breakdown.model_volume_cc,
+            "support_volume_cc":          breakdown.support_volume_cc,
+            "effective_volume_cc":        breakdown.effective_volume_cc,
+            "material_grams":             breakdown.material_grams,
+            "material_rate_per_cc":       breakdown.material_rate_per_cc,
+            "base_display_price":         breakdown.base_manufacturing_cost,
+            "base_manufacturing_cost":    breakdown.base_manufacturing_cost,
             "adjusted_manufacturing_cost": breakdown.adjusted_manufacturing_cost,
-            "platform_fee": breakdown.platform_fee,
-            "packaging_fee": breakdown.packaging_fee,
-            "subtotal": breakdown.subtotal,
-            "gst_amount": breakdown.gst_amount,
-            "delivery_charges": breakdown.delivery_fee,
-            "delivery_fee": breakdown.delivery_fee,
-            "final_price": breakdown.final_price,
-            "estimated_print_time_hrs": breakdown.estimated_print_time_hrs,
+            "platform_fee":               breakdown.platform_fee,
+            "packaging_fee":              breakdown.packaging_fee,
+            "subtotal":                   breakdown.subtotal,
+            "gst_amount":                 breakdown.gst_amount,
+            "delivery_charges":           breakdown.delivery_fee,
+            "delivery_fee":               breakdown.delivery_fee,
+            "final_price":                breakdown.final_price,
+            "price_range_min":            breakdown.price_range_min,
+            "price_range_max":            breakdown.price_range_max,
+            "estimated_print_time_hrs":   breakdown.estimated_print_time_hrs,
         }
 
     except HTTPException:
