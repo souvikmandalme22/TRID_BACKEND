@@ -9,8 +9,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "changeme"
     API_VERSION: str = "v1"
 
-    DATABASE_URL: str
-    DATABASE_URL_SYNC: str
+    DATABASE_URL: str = "" 
+    DATABASE_URL_SYNC: str = ""
 
     ALLOWED_ORIGINS: list[str] = [
     "https://trid-2q3h.onrender.com",
