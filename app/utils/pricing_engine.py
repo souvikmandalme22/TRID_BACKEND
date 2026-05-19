@@ -26,16 +26,19 @@ GST_RATE = Decimal("0.18")
 BASE_COST = Decimal("50")
 SETUP_OVERHEAD_HRS = 0.5
 
+# realistic machine hourly rates (India market)
+MACHINE_HOURLY_RATE = {
+    MachineTier.DESKTOP: 35,
+    MachineTier.MID_INDUSTRY: 80,
+    MachineTier.INDUSTRY: 180,
+}
+
 
 # =========================================================
-# SMOOTH MARKET CURVE (FIXED - NO CLIFfS)
+# SMOOTH MARKET CURVE
 # =========================================================
 
 def get_market_anchor_rate(volume_cc: float) -> float:
-    """
-    Smooth exponential decay instead of step function
-    Fixes pricing jumps at 1k / 3k / 7k / etc
-    """
     return 2.3 * math.exp(-volume_cc / 18000) + 0.65
 
 
@@ -97,10 +100,10 @@ class PriceBreakdown:
     final_price: float
 
     estimated_print_time_hrs: float
-    
+
     complexity_multiplier: float = 1.0
     orientation_multiplier: float = 1.0
-    
+
     hollowing_applied: bool = False
     hollowing_factor: float = 1.0
 
@@ -110,28 +113,21 @@ class PriceBreakdown:
 # =========================================================
 
 def apply_hollowing_factor(volume_cc: float) -> tuple:
-    """
-    Large parts are printed hollow to reduce cost
-    Returns: (effective_volume, hollowing_factor, hollowing_applied)
-    """
-    
-    # Threshold: If part > 5000cc, assume it's hollow
+
     HOLLOWING_THRESHOLD = 5000
-    
+
     if volume_cc <= HOLLOWING_THRESHOLD:
-        # Small parts: solid
         return volume_cc, 1.0, False
-    
-    # Large parts: hollow shell model
-    # Wall thickness typically 1-2mm, so about 70-85% reduction
+
     if volume_cc <= 10000:
-        hollow_factor = 0.25  # 25% of volume (75% hollow)
+        hollow_factor = 0.25
     elif volume_cc <= 20000:
-        hollow_factor = 0.20  # 20% of volume (80% hollow)
+        hollow_factor = 0.20
     else:
-        hollow_factor = 0.15  # 15% of volume (85% hollow)
-    
+        hollow_factor = 0.15
+
     effective_volume = volume_cc * hollow_factor
+
     return effective_volume, hollow_factor, True
 
 
@@ -141,40 +137,47 @@ def get_infill_factor(infill_percent: int) -> float:
 
 
 def apply_large_part_discount(rate: float, volume: float) -> float:
-    """
-    Soft discounting (prevents underpricing large parts)
-    """
+
     if volume > 30000:
-        rate *= 0.60
+        rate *= 0.50
     elif volume > 20000:
-        rate *= 0.70
+        rate *= 0.60
     elif volume > 10000:
-        rate *= 0.80
+        rate *= 0.72
     elif volume > 5000:
-        rate *= 0.90
+        rate *= 0.85
 
     return max(round(rate, 2), 0.35)
 
 
 def get_platform_fee(cost: float) -> float:
+
     if cost <= 500:
         return 40
+
     if cost <= 2000:
         return 90
+
     if cost <= 5000:
         return 180
+
     if cost <= 15000:
         return 350
+
     return min(900, cost * 0.03)
 
 
 def get_packaging_fee(volume: float) -> float:
+
     if volume > 5000:
         return 120
+
     if volume > 1000:
         return 60
+
     if volume > 300:
         return 25
+
     return 10
 
 
@@ -191,60 +194,52 @@ def estimate_print_time(volume: float) -> float:
 # =========================================================
 
 def calculate_complexity_multiplier(complexity_features: dict) -> float:
-    """
-    Calculate multiplier based on complexity features
-    Each feature adds 5-15% to the base cost
-    """
+
     if not complexity_features:
         return 1.0
-    
+
     multiplier = 1.0
-    
-    # Feature costs (as percentage increase)
+
     feature_costs = {
-        "thin_wall": 0.05,           # 5% premium
-        "internal_channels": 0.08,   # 8% premium
-        "text_or_logo": 0.05,        # 5% premium
-        "high_support": 0.08,        # 8% premium
+        "thin_wall": 0.05,
+        "internal_channels": 0.08,
+        "text_or_logo": 0.05,
+        "high_support": 0.08,
         "orientation_sensitive": 0.05,
         "tiny_features": 0.08,
         "tolerance_critical": 0.08,
     }
-    
+
     for feature, cost in feature_costs.items():
         if complexity_features.get(feature, False):
             multiplier += cost
-    
+
     return round(multiplier, 2)
 
 
 def calculate_orientation_multiplier(orientation_analysis: dict) -> float:
-    """
-    Calculate multiplier based on orientation analysis
-    Warp risk and failure risk increase costs
-    """
+
     if not orientation_analysis:
         return 1.0
-    
+
     multiplier = 1.0
-    
-    # Base factors
+
     if orientation_analysis.get("warp_risk", False):
-        multiplier += 0.05  # 5% for warp risk
-    
+        multiplier += 0.05
+
     if orientation_analysis.get("tall_geometry", False):
-        multiplier += 0.03  # 3% for tall geometry
-    
-    # Continuous failure risk factor (0-1 scale)
+        multiplier += 0.03
+
     failure_risk = orientation_analysis.get("failure_risk", 0.0)
+
     if failure_risk > 0:
-        multiplier += (failure_risk * 0.10)  # Up to 10% penalty
-    
+        multiplier += (failure_risk * 0.10)
+
     return round(multiplier, 2)
 
 
 # =========================================================
-# MAIN ENGINE (FIXED ARCHITECTURE)
+# MAIN ENGINE
 # =========================================================
 
 def calculate_price(
@@ -261,85 +256,178 @@ def calculate_price(
 
     if complexity_features is None:
         complexity_features = {}
+
     if orientation_analysis is None:
         orientation_analysis = {}
 
     tier = MachineTier(machine_tier)
 
-    # ─────────────────────────────────────
-    # APPLY HOLLOWING FOR LARGE PARTS
-    # ─────────────────────────────────────
-    model_volume_effective, hollowing_factor, hollowing_applied = apply_hollowing_factor(model_volume_cc)
+    # =====================================================
+    # HOLLOWING
+    # =====================================================
 
-    # -----------------------------
-    # INFILL SAFETY CAP
-    # -----------------------------
+    model_volume_effective, hollowing_factor, hollowing_applied = apply_hollowing_factor(
+        model_volume_cc
+    )
+
+    # =====================================================
+    # INFILL SAFETY
+    # =====================================================
+
     if model_volume_effective > 5000:
         infill_percent = min(infill_percent, 5)
 
     infill_factor = get_infill_factor(infill_percent)
 
-    effective_volume = (model_volume_effective * infill_factor) + support_volume_cc
+    # support should NOT cost full material rate
+    support_effective = support_volume_cc * 0.35
 
-    # -----------------------------
-    # MATERIAL RATE SELECTION
-    # -----------------------------
+    effective_volume = (
+        (model_volume_effective * infill_factor)
+        + support_effective
+    )
+
+    # =====================================================
+    # MATERIAL RATE
+    # =====================================================
+
     chart = PRICING_CHART.get(material_slug, DEFAULT_PRICING)
+
     mn, mx = chart[ComplexityLevel.SIMPLE][tier]
 
     t = min(max((effective_volume - 50) / 2000, 0), 1)
+
     rate = mx - (mx - mn) * t
 
     rate = apply_large_part_discount(rate, effective_volume)
 
-    # -----------------------------
-    # COST MODEL
-    # -----------------------------
-    cost_based = effective_volume * rate
+    # =====================================================
+    # MATERIAL COST
+    # =====================================================
 
-    # -----------------------------
-    # MARKET MODEL (SMOOTHED)
-    # -----------------------------
+    material_cost = effective_volume * rate
+
+    # =====================================================
+    # MACHINE TIME COST
+    # =====================================================
+
+    estimated_print_time = estimate_print_time(effective_volume)
+
+    machine_hour_rate = MACHINE_HOURLY_RATE[tier]
+
+    machine_time_cost = estimated_print_time * machine_hour_rate
+
+    # =====================================================
+    # MARKET ADJUSTMENT
+    # =====================================================
+
     market_rate = get_market_anchor_rate(effective_volume)
+
     market_based = effective_volume * market_rate
 
-    # blended pricing (balanced fairness vs profitability)
-    MARKET_BLEND_ALPHA = 0.62
+    # =====================================================
+    # HYBRID COST MODEL
+    # =====================================================
 
     adjusted_cost = (
-        MARKET_BLEND_ALPHA * cost_based +
-        (1 - MARKET_BLEND_ALPHA) * market_based
+        (material_cost * 0.55)
+        + (machine_time_cost * 0.35)
+        + (market_based * 0.10)
     )
 
     adjusted_cost += float(BASE_COST)
 
-    # ─────────────────────────────────────
-    # COMPLEXITY & ORIENTATION MULTIPLIERS
-    # ─────────────────────────────────────
-    complexity_mult = calculate_complexity_multiplier(complexity_features)
-    orientation_mult = calculate_orientation_multiplier(orientation_analysis)
-    
-    # Apply multipliers to adjusted cost
-    adjusted_cost = adjusted_cost * complexity_mult * orientation_mult
+    # =====================================================
+    # COMPLEXITY MULTIPLIERS
+    # =====================================================
 
-    # -----------------------------
-    # ORDER FEES (FIXED STRUCTURE)
-    # -----------------------------
+    complexity_mult = calculate_complexity_multiplier(
+        complexity_features
+    )
+
+    orientation_mult = calculate_orientation_multiplier(
+        orientation_analysis
+    )
+
+    adjusted_cost = (
+        adjusted_cost
+        * complexity_mult
+        * orientation_mult
+    )
+
+    # =====================================================
+    # ORDER FEES
+    # =====================================================
+
     platform_fee = get_platform_fee(adjusted_cost)
+
     packaging_fee = get_packaging_fee(effective_volume)
+
     delivery_fee = get_delivery_fee(delivery_type)
 
-    # -----------------------------
-    # QUANTITY CORRECT MODEL
-    # -----------------------------
+    # =====================================================
+    # QUANTITY OPTIMIZATION
+    # =====================================================
+
+    if quantity > 1:
+        quantity_discount_factor = max(
+            0.72,
+            1 - ((quantity - 1) * 0.03)
+        )
+    else:
+        quantity_discount_factor = 1.0
+
     unit_cost = adjusted_cost
-    unit_total = unit_cost * quantity
 
-    order_fees = platform_fee + packaging_fee + delivery_fee
+    total_manufacturing_cost = (
+        unit_cost
+        * quantity
+        * quantity_discount_factor
+    )
 
-    subtotal = unit_total + order_fees
+    # =====================================================
+    # FINAL CALCULATION
+    # =====================================================
+
+    subtotal = (
+        total_manufacturing_cost
+        + platform_fee
+        + packaging_fee
+        + delivery_fee
+    )
+
     gst = subtotal * float(GST_RATE)
+
     final = subtotal + gst
+
+    # =====================================================
+    # SAFETY ROUNDING
+    # =====================================================
+
+    subtotal = round(subtotal, 2)
+    gst = round(gst, 2)
+    final = round(final, 2)
+
+    # =====================================================
+    # DEBUG LOG
+    # =====================================================
+
+    print("============== PRICE DEBUG ==============")
+    print("MODEL VOL:", model_volume_cc)
+    print("SUPPORT VOL:", support_volume_cc)
+    print("EFFECTIVE VOL:", effective_volume)
+    print("RATE:", rate)
+    print("MATERIAL COST:", material_cost)
+    print("TIME COST:", machine_time_cost)
+    print("MARKET COST:", market_based)
+    print("ADJUSTED:", adjusted_cost)
+    print("PLATFORM:", platform_fee)
+    print("PACKAGING:", packaging_fee)
+    print("DELIVERY:", delivery_fee)
+    print("SUBTOTAL:", subtotal)
+    print("GST:", gst)
+    print("FINAL:", final)
+    print("=========================================")
 
     return PriceBreakdown(
         model_volume_cc=model_volume_cc,
@@ -350,25 +438,31 @@ def calculate_price(
         machine_tier=tier.value,
         complexity_level="simple",
 
-        material_rate_per_cc=rate,
-        material_grams=effective_volume * MATERIAL_DENSITY.get(material_slug, 1),
+        material_rate_per_cc=round(rate, 2),
 
-        base_manufacturing_cost=cost_based,
-        market_adjusted_cost=adjusted_cost,
+        material_grams=round(
+            effective_volume
+            * MATERIAL_DENSITY.get(material_slug, 1),
+            2
+        ),
 
-        platform_fee=platform_fee,
-        packaging_fee=packaging_fee,
-        delivery_fee=delivery_fee,
+        base_manufacturing_cost=round(material_cost, 2),
+
+        market_adjusted_cost=round(adjusted_cost, 2),
+
+        platform_fee=round(platform_fee, 2),
+        packaging_fee=round(packaging_fee, 2),
+        delivery_fee=round(delivery_fee, 2),
 
         subtotal=subtotal,
         gst_amount=gst,
         final_price=final,
 
-        estimated_print_time_hrs=estimate_print_time(effective_volume),
-        
+        estimated_print_time_hrs=estimated_print_time,
+
         complexity_multiplier=complexity_mult,
         orientation_multiplier=orientation_mult,
-        
+
         hollowing_applied=hollowing_applied,
         hollowing_factor=hollowing_factor,
     )
